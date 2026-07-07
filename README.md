@@ -1,16 +1,29 @@
-# tracker
+# LoGold — dữ liệu lịch sử giá vàng SJC
 
-A new Flutter project.
+Repo này chỉ chứa dữ liệu lịch sử giá vàng SJC dùng cho app **Lỗ**
+([cuongtechnology/LoGold](https://github.com/cuongtechnology/LoGold)),
+được cào tự động từ [giavang.org](https://giavang.org/trong-nuoc/sjc/lich-su/)
+mỗi ngày qua GitHub Action.
 
-## Getting Started
+## File chính
 
-This project is a starting point for a Flutter application.
+- **`sjc_history.json`** — series giá theo ngày (nghìn đồng/lượng), dùng để
+  app fetch qua CDN:
+  ```
+  https://cdn.jsdelivr.net/gh/cuongmediatn/LoGold@main/sjc_history.json
+  ```
+  Sau khi Action cập nhật, gọi API purge cache của jsDelivr để lấy dữ liệu
+  mới ngay (không phải chờ cache hết hạn):
+  ```
+  https://purge.jsdelivr.net/gh/cuongmediatn/LoGold@main/sjc_history.json
+  ```
+- `data/sjc_raw.jsonl` — cache thô đầy đủ mọi khu vực/loại vàng, dùng để
+  script resume mà không cào lại từ đầu.
+- `scripts/scrape_sjc_history.py` — script cào, chạy tự động bởi
+  `.github/workflows/scrape.yml`.
 
-A few resources to get you started if this is your first Flutter project:
+## Giới hạn dữ liệu
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+giavang.org ngừng công bố lịch sử giá SJC từ khoảng 23/03/2025. Dữ liệu từ
+mốc đó tới hiện tại app tự bổ sung qua giá live của chính app (không phụ
+thuộc repo này).
