@@ -4,6 +4,9 @@
 Nguồn: https://giavang.org/trong-nuoc/sjc/lich-su/ (dữ liệu từ 22/07/2009).
 Mỗi ngày có 1 trang /trong-nuoc/sjc/lich-su/YYYY-MM-DD.html chứa bảng
 (Khu vực | Loại vàng | Mua vào | Bán ra | Thời gian), đơn vị nghìn đồng/lượng.
+Từ ~18/05/2024 trang này còn có thêm dòng "Vàng nhẫn SJC 99,99..." và
+"Nữ trang 99,99%" — tận dụng luôn để build thêm 2 series ring_9999/jewelry
+(baseline ngắn hơn SJC, chỉ từ mốc đó).
 
 Lưu ý: giavang.org ngừng công bố lịch sử SJC từ ~23/03/2025. Script vẫn cào
 lại mỗi ngày (qua GitHub Action) để tự bắt kịp nếu nguồn công bố lại.
@@ -13,9 +16,10 @@ Cách chạy:
     python3 scripts/scrape_sjc_history.py --limit 50 # thử 50 ngày đầu
 
 Output:
-    data/sjc_raw.jsonl  — cache thô, 1 dòng/ngày (kể cả ngày không có dữ liệu)
-    sjc_history.json    — series chuẩn để app/jsDelivr dùng: [{d, buy, sell}]
-                          (nghìn đồng/lượng)
+    data/sjc_raw.jsonl        — cache thô, 1 dòng/ngày (kể cả ngày không có dữ liệu)
+    sjc_history.json          — series SJC 1L: [{d, buy, sell}] (nghìn đồng/lượng)
+    ring_9999_history.json    — series Nhẫn SJC 99,99 (từ ~18/05/2024)
+    jewelry_history.json      — series Nữ trang 99,99% (từ ~18/05/2024)
 """
 
 import argparse
@@ -30,9 +34,15 @@ BASE = "https://giavang.org/trong-nuoc/sjc/lich-su/"
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RAW_PATH = REPO_ROOT / "data" / "sjc_raw.jsonl"
-APP_JSON_PATH = REPO_ROOT / "sjc_history.json"
 DELAY_SECONDS = 0.35
 MAX_RETRIES = 3
+
+# Mỗi entry: (tên file output, regex khớp "type", regex khu vực ưu tiên).
+SERIES_DEFS = [
+    ("sjc_history.json", r"sjc\s*1\s*l", r"hồ chí minh"),
+    ("ring_9999_history.json", r"nhẫn", r"hồ chí minh"),
+    ("jewelry_history.json", r"nữ trang\s*99,99", r"hồ chí minh"),
+]
 
 
 def fetch(url: str) -> str:
@@ -108,39 +118,42 @@ def load_done() -> dict[str, dict]:
     return done
 
 
-def canonical_row(rows: list[dict]) -> dict | None:
-    """Chọn giá SJC miếng đại diện cho ngày: ưu tiên Hồ Chí Minh, loại 'SJC 1L'."""
-    def score(r):
-        s = 0
-        if "hồ chí minh" in r["region"].lower():
-            s -= 10
-        if re.search(r"sjc\s*1\s*l", r["type"].lower()):
-            s -= 5
-        return s
-
-    candidates = [r for r in rows if r["buy"] is not None and r["sell"] is not None]
+def find_row(rows: list[dict], type_pattern: str, region_pattern: str) -> dict | None:
+    """Tìm row khớp [type_pattern] (regex trên "type"), ưu tiên
+    [region_pattern] nếu có nhiều region cùng khớp."""
+    candidates = [
+        r for r in rows
+        if r["buy"] is not None and r["sell"] is not None
+        and re.search(type_pattern, r["type"].lower())
+    ]
     if not candidates:
         return None
-    return sorted(candidates, key=score)[0]
+    candidates.sort(key=lambda r: 0 if re.search(region_pattern, r["region"].lower()) else 1)
+    return candidates[0]
 
 
-def build_app_json(done: dict[str, dict]) -> None:
+def build_series_json(done: dict[str, dict], filename: str, type_pattern: str, region_pattern: str) -> None:
     series = []
     for date in sorted(done):
         rec = done[date]
         if rec["status"] != "ok":
             continue
-        row = canonical_row(rec["rows"])
+        row = find_row(rec["rows"], type_pattern, region_pattern)
         if row:
             series.append({"d": date, "buy": row["buy"], "sell": row["sell"]})
-    APP_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with APP_JSON_PATH.open("w", encoding="utf-8") as f:
+    path = REPO_ROOT / filename
+    with path.open("w", encoding="utf-8") as f:
         json.dump({
             "source": "giavang.org",
             "unit": "nghìn đồng/lượng",
             "series": series,
         }, f, ensure_ascii=False, separators=(",", ":"))
-    print(f"→ {APP_JSON_PATH.name}: {len(series)} ngày có giá")
+    print(f"→ {filename}: {len(series)} ngày có giá")
+
+
+def build_all_series(done: dict[str, dict]) -> None:
+    for filename, type_pattern, region_pattern in SERIES_DEFS:
+        build_series_json(done, filename, type_pattern, region_pattern)
 
 
 def dedupe_raw_file(done: dict[str, dict]) -> None:
@@ -159,7 +172,7 @@ def main() -> int:
 
     done = load_done()
     if args.rebuild_only:
-        build_app_json(done)
+        build_all_series(done)
         return 0
 
     print("Lấy danh sách ngày từ trang index...")
@@ -188,7 +201,7 @@ def main() -> int:
         time.sleep(DELAY_SECONDS)
 
     dedupe_raw_file(done)
-    build_app_json(done)
+    build_all_series(done)
     total_ok = sum(1 for r in done.values() if r["status"] == "ok")
     print(f"Hoàn tất: {total_ok}/{len(done)} ngày có dữ liệu trong cache.")
     return 0

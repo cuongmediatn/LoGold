@@ -1,4 +1,4 @@
-name: Update SJC gold price history
+name: Update gold price history
 
 on:
   schedule:
@@ -18,13 +18,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Cào dữ liệu
+      - name: Cào SJC (+ ring_9999, jewelry — cùng nguồn)
         run: python3 scripts/scrape_sjc_history.py
+
+      - name: Cào PNJ (+ pnj_24k — cùng nguồn)
+        run: python3 scripts/scrape_pnj_history.py
 
       - name: Commit & push nếu có thay đổi
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add sjc_history.json data/sjc_raw.jsonl
-          git diff --cached --quiet || git commit -m "chore: update SJC gold price history"
+          git add sjc_history.json ring_9999_history.json jewelry_history.json \
+                  pnj_hanoi_history.json pnj_24k_history.json \
+                  data/sjc_raw.jsonl data/pnj_raw.jsonl
+          git diff --cached --quiet || git commit -m "chore: update gold price history"
           git push
